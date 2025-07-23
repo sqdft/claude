@@ -1,55 +1,69 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { readFile } from "https://deno.land/std@0.224.0/fs/mod.ts";
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const chat = document.getElementById("chat");
 
-// 设置你的 API key
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
+function addMessage(content, sender) {
+  const msg = document.createElement("div");
+  msg.className = `message ${sender}`;
+  msg.textContent = content;
+  chat.appendChild(msg);
+  chat.scrollTop = chat.scrollHeight;
+}
 
-serve(async (req) => {
-  const url = new URL(req.url);
+function addLoader() {
+  const loader = document.createElement("div");
+  loader.className = "message assistant";
+  loader.id = "loading";
+  loader.innerHTML = "Typing<span class='loader'>...</span>";
+  chat.appendChild(loader);
+  chat.scrollTop = chat.scrollHeight;
+}
 
-  // 路由：返回 claude.html
-  if (url.pathname === "/" || url.pathname === "/index.html") {
-    const html = await Deno.readTextFile("claude.html");
-    return new Response(html, {
-      headers: { "content-type": "text/html" },
-    });
-  }
+function removeLoader() {
+  const loader = document.getElementById("loading");
+  if (loader) loader.remove();
+}
 
-  // 路由：返回 main.js 静态脚本
-  if (url.pathname === "/main.js") {
-    const js = await Deno.readTextFile("main.js");
-    return new Response(js, {
-      headers: { "content-type": "application/javascript" },
-    });
-  }
+sendBtn.addEventListener("click", async () => {
+  const text = input.value.trim();
+  if (!text) return;
 
-  // 路由：处理 /chat 请求
-  if (url.pathname === "/chat" && req.method === "POST") {
-    const { message } = await req.json();
+  addMessage(text, "user");
+  input.value = "";
+  input.focus();
 
-    const body = {
-      model: "gpt-4o", // 可改为 gpt-3.5-turbo
-      messages: [{ role: "user", content: message }],
-    };
+  sendBtn.disabled = true;
+  addLoader();
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  try {
+    const res = await fetch("/chat", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ message: text })
     });
 
     const data = await res.json();
+    removeLoader();
 
-    if (data?.choices?.[0]?.message?.content) {
-      return Response.json({ response: data.choices[0].message.content });
+    if (data?.response) {
+      addMessage(data.response, "assistant");
     } else {
-      return Response.json({ response: `Error: ${JSON.stringify(data)}` });
+      addMessage("⚠️ No response from assistant.", "assistant");
     }
+  } catch (e) {
+    removeLoader();
+    addMessage("❌ Error: " + e.message, "assistant");
+  } finally {
+    sendBtn.disabled = false;
   }
+});
 
-  // 未知路由
-  return new Response("Not found", { status: 404 });
+// Enter key sends message
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendBtn.click();
+  }
 });
